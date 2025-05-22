@@ -39,7 +39,7 @@ variable "private_subnet_cidr" {
 }
 
 variable "admin_username" {
-  description = "Administrator username for VMs"
+  description = "Administrator username for Virtual machine"
   type        = string
 }
 
