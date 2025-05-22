@@ -1,0 +1,62 @@
+name: 'Check for Destroy Operations'
+description: 'Checks if Terraform plan contains destroy operations'
+
+inputs:
+  terraform_folder:
+    description: 'Path to terraform folder'
+    required: true
+  environment:
+    description: 'Target environment'
+    required: true
+
+outputs:
+  destroy_detected:
+    description: 'Whether destroy operations were detected'
+    value: ${{ steps.check.outputs.destroy_detected }}
+  plan_summary:
+    description: 'Plan summary'
+    value: ${{ steps.check.outputs.plan_summary }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check for Destroy Operations
+      id: check
+      shell: bash
+      run: |
+        cd ${{ inputs.terraform_folder }}
+      
+        # Generate plan output for checking
+        terraform show -no-color tfplan > plan_output.txt
+      
+        # Check if plan contains destroy operations
+        if grep -q "will be destroyed" plan_output.txt || grep -q "must be replaced" plan_output.txt; then
+          echo "destroy_detected=true" >> $GITHUB_OUTPUT
+          echo "DESTROY OPERATIONS DETECTED!"
+        
+          # Create readable format only when destroy is detected
+          echo "# Terraform Plan - DESTROY OPERATIONS DETECTED" > destroy_plan.md
+          echo "" >> destroy_plan.md
+          echo "**Repository:** ${{ github.repository }}" >> destroy_plan.md
+          echo "**Environment:** ${{ inputs.environment }}" >> destroy_plan.md
+          echo "**Branch:** ${GITHUB_REF#refs/heads/}" >> destroy_plan.md
+          echo "**Run:** ${{ github.run_number }}" >> destroy_plan.md
+          echo "" >> destroy_plan.md
+          echo "## Resources to be Destroyed/Replaced:" >> destroy_plan.md
+          echo '```' >> destroy_plan.md
+          grep -A 3 -B 1 "will be destroyed\|must be replaced" plan_output.txt >> destroy_plan.md
+          echo '```' >> destroy_plan.md
+          echo "" >> destroy_plan.md
+          echo "## Full Plan Output:" >> destroy_plan.md
+          echo '```' >> destroy_plan.md
+          cat plan_output.txt >> destroy_plan.md
+          echo '```' >> destroy_plan.md
+        
+          # Get plan summary
+          PLAN_SUMMARY=$(grep -E "Plan:|No changes" plan_output.txt | tail -1 || echo "Plan summary not found")
+          echo "plan_summary=$PLAN_SUMMARY" >> $GITHUB_OUTPUT
+       
+        else
+          echo "destroy_detected=false" >> $GITHUB_OUTPUT
+          echo "No destroy operations detected."
+        fi

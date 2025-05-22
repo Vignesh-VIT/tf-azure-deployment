@@ -1,0 +1,80 @@
+variable "environment" {
+  description = "Deployment environment (dev, qa, prod)"
+  type        = string
+}
+
+variable "subscription_id" {
+  description = "Azure subscription ID"
+  type        = string
+}
+
+variable "resource_group_name" {
+  description = "Name of the resource group"
+  type        = string
+}
+
+variable "location" {
+  description = "Azure region for the resources"
+  type        = string
+}
+
+variable "vnet_name" {
+  description = "Name of the virtual network"
+  type        = string
+}
+
+variable "address_space" {
+  description = "Address space for the virtual network"
+  type        = list(string)
+}
+
+variable "public_subnet_cidr" {
+  description = "CIDR block for the public subnet"
+  type        = list(string)
+}
+
+variable "private_subnet_cidr" {
+  description = "CIDR block for the private subnet"
+  type        = list(string)
+}
+
+variable "admin_username" {
+  description = "Administrator username for VMs"
+  type        = string
+}
+
+variable "public_vm_size" {
+  description = "Size of the public virtual machine"
+  type        = string
+  default     = "Standard_B1s"
+}
+
+variable "private_vm_size" {
+  description = "Size of the private virtual machine"
+  type        = string
+  default     = "Standard_B1s"
+}
+
+variable "object_id" {
+  description = "username"
+  type        = string
+  default     = "8578a3cb-b1ed-446d-b381-b0de63a9121f"
+}
+
+variable "sp_object_id" {
+  description = "username"
+  type        = string
+  default     = "febc913e-2220-423f-a170-5c66648993b7"
+}
+
+variable "db_username" {
+  description = "Database username"
+  type        = string
+  default     = "flaskuser"
+}
+
+variable "db_name" {
+  description = "Database name"
+  type        = string
+  default     = "flaskdb"
+}

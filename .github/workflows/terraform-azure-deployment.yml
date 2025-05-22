@@ -1,0 +1,60 @@
+name: 'terraform-azure-deployment'
+
+on:
+  push:
+    branches:
+      - qa         # Staging/QA
+      - feature/** # Development
+    paths:
+      - '**/*.tf'
+      - '**/*.tfvars'
+      - '.github/workflows/**'
+  pull_request:
+    branches:
+      - main
+      - qa            
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+
+run-name: "${{ github.ref_name }}.${{ github.sha }}.${{ github.workflow }}."
+
+jobs:
+  determine-environment:
+    uses: ./.github/workflows/determine-environment.yml
+    with:
+      workflow_input: ${{ github.event.inputs.environment }}
+
+  terraform-verify:
+    needs: determine-environment
+    uses: ./.github/workflows/terraform-verify.yml
+    with:
+      environment: ${{ needs.determine-environment.outputs.environment }}
+    secrets: inherit
+
+  terraform-plan:
+    needs: [determine-environment, terraform-verify]
+    uses: ./.github/workflows/terraform-plan.yml
+    with:
+      environment: ${{ needs.determine-environment.outputs.environment }}
+      is_pr: ${{ needs.determine-environment.outputs.is_pr }}
+    secrets: inherit
+
+  terraform-apply:
+    needs: [determine-environment, terraform-plan]
+    if: |
+      needs.determine-environment.outputs.is_pr == 'false' && 
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/terraform-deploy.yml
+    with:
+      environment: ${{ needs.determine-environment.outputs.environment }}
+    secrets: inherit

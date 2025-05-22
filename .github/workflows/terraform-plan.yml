@@ -1,0 +1,109 @@
+name: 'Terraform Plan'
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: string
+      is_pr:
+        description: 'Whether this is a PR'
+        required: true
+        type: string
+      terraform_version:
+        description: 'Terraform version'
+        required: false
+        type: string
+        default: '1.7.4'
+      terraform_folder:
+        description: 'Terraform folder path'
+        required: false
+        type: string
+        default: 'terraform/project-backend'
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_USE_CLI: false
+  TF_LOG: info
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}-plan
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set subscription ID
+        run: |
+          cd ${{ inputs.terraform_folder }}
+          SUBSCRIPTION_ID=$(grep subscription_id ../environments/${{ inputs.environment }}/terraform.tfvars | cut -d'"' -f2 || echo "${{ secrets.AZURE_SUBSCRIPTION_ID }}")
+          echo "ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> $GITHUB_ENV
+
+      - name: Terraform Init
+        id: init
+        run: |
+          cd ${{ inputs.terraform_folder }}
+          terraform init \
+            -backend-config=../environments/${{ inputs.environment }}/backend.tfvars \
+            -reconfigure
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          cd ${{ inputs.terraform_folder }}
+          terraform plan \
+            -var-file=../environments/${{ inputs.environment }}/terraform.tfvars \
+            -out=tfplan
+        continue-on-error: false
+
+      - name: Check for Destroy Operations
+        id: check_destroy
+        uses: ./.github/actions/check-destroy-operations
+        with:
+          terraform_folder: ${{ inputs.terraform_folder }}
+          environment: ${{ inputs.environment }}
+
+      - name: Send Destroy Alert
+        if: steps.check_destroy.outputs.destroy_detected == 'true'
+        uses: ./.github/actions/notifications/send-destroy-alert
+        with:
+          plan_summary: ${{ steps.check_destroy.outputs.plan_summary }}
+          environment: ${{ inputs.environment }}
+          webhook_url: ${{ secrets.POWER_AUTOMATE_WEBHOOK_URL }}
+
+      - name: Fail Pipeline if Destroy Detected
+        if: steps.check_destroy.outputs.destroy_detected == 'true'
+        run: |
+          echo "PIPELINE FAILURE: Terraform plan contains DESTROY operations!"
+          echo "This is potentially dangerous and requires manual review."
+          echo "Destroy alert has been sent for review."
+          exit 1
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ inputs.environment }}
+          path: ${{ inputs.terraform_folder }}/tfplan
+          retention-days: 5
+
+      - name: Send Build notifications to Teams Channel
+        uses: ./.github/actions/notifications/send-teams-notification
+        with:
+          environment: ${{ inputs.environment }}
+          status: ${{ job.status }}
+          webhook_url: ${{ secrets.MS_TEAMS_WEBHOOK_URL }}

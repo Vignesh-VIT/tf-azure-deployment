@@ -13,7 +13,13 @@ resource "azurerm_network_interface" "nic" {
   tags = var.tags
 }
 
-resource "azurerm_network_interface_security_group_association" "nic_nsg_association" {
-  network_interface_id      = azurerm_network_interface.nic.id
-  network_security_group_id = var.network_security_group_id
+# resource "azurerm_network_interface_security_group_association" "nsg_association" {
+#   network_interface_id     = azurerm_network_interface.nic.id
+#   network_security_group_id = var.network_security_group_id
+# }
+
+resource "azurerm_network_interface_application_security_group_association" "asg_association" {
+  count                         = length(var.application_security_group_ids)
+  network_interface_id          = azurerm_network_interface.nic.id
+  application_security_group_id = var.application_security_group_ids[count.index]
 }

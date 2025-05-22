@@ -24,9 +24,16 @@ variable "public_ip_id" {
   default     = null
 }
 
-variable "network_security_group_id" {
-  description = "The ID of the Network Security Group to associate with the NIC"
-  type        = string
+# variable "network_security_group_id" {
+#   description = "The ID of the Network Security Group to associate with the NIC"
+#   type        = string
+#   default     = null
+# }
+
+variable "application_security_group_ids" {
+  description = "List of Application Security Group IDs"
+  type        = list(string)
+  default     = []
 }
 
 variable "tags" {

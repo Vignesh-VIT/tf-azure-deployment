@@ -1,0 +1,63 @@
+name: 'Determine Environment'
+
+on:
+  workflow_call:
+    inputs:
+      workflow_input:
+        description: 'Environment from workflow dispatch'
+        required: false
+        type: string
+    outputs:
+      environment:
+        description: 'Target environment'
+        value: ${{ jobs.determine-environment.outputs.environment }}
+      is_pr:
+        description: 'Whether this is a PR'
+        value: ${{ jobs.determine-environment.outputs.is_pr }}
+
+jobs:
+  determine-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      is_pr: ${{ steps.set-env.outputs.is_pr }}
+    
+    steps:
+      - name: Set environment based on branch or workflow input
+        id: set-env
+        run: |
+          # Default to workflow input if provided
+          if [[ "${{ inputs.workflow_input }}" != "" ]]; then
+            echo "environment=${{ inputs.workflow_input }}" >> $GITHUB_OUTPUT
+            echo "is_pr=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if this is a pull request
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "is_pr=true" >> $GITHUB_OUTPUT
+            
+            # Set environment based on target branch of PR
+            if [[ "${{ github.base_ref }}" == "main" ]]; then
+              echo "environment=prod" >> $GITHUB_OUTPUT
+            elif [[ "${{ github.base_ref }}" == "qa" ]]; then
+              echo "environment=qa" >> $GITHUB_OUTPUT
+            else
+              echo "environment=dev" >> $GITHUB_OUTPUT
+            fi
+            
+            exit 0
+          fi
+          
+          # For direct push, determine environment based on branch name
+          echo "is_pr=false" >> $GITHUB_OUTPUT
+          
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref_name }}" == "qa" ]]; then
+            echo "environment=qa" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref_name }}" == feature/* ]] || [[ "${{ github.ref_name }}" == bug/* ]]; then
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          fi

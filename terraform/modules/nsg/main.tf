@@ -5,20 +5,22 @@ resource "azurerm_network_security_group" "nsg" {
   tags                = var.tags
 }
 
-resource "azurerm_network_security_rule" "this" {
-  for_each = { for rule in var.security_rules : rule.name => rule }
+# resource "azurerm_network_security_rule" "this" {
+#   for_each = { for rule in var.security_rules : rule.name => rule }
 
-  name                         = each.value.name
-  priority                     = each.value.priority
-  direction                    = each.value.direction
-  access                       = each.value.access
-  protocol                     = each.value.protocol
-  source_port_ranges           = each.value.source_port_ranges
-  destination_port_ranges      = each.value.destination_port_ranges
-  source_address_prefixes      = each.value.source_address_prefixes
-  destination_address_prefixes = each.value.destination_address_prefixes
-  description                  = each.value.description
+#   name                                       = each.value.name
+#   priority                                   = each.value.priority
+#   direction                                  = each.value.direction
+#   access                                     = each.value.access
+#   protocol                                   = each.value.protocol
+#   source_port_ranges                         = each.value.source_port_ranges
+#   destination_port_ranges                    = each.value.destination_port_ranges
+#   source_address_prefixes                    = length(each.value.source_address_prefixes) > 0 ? each.value.source_address_prefixes : null
+#   destination_address_prefixes               = length(each.value.destination_address_prefixes) > 0 ? each.value.destination_address_prefixes : null
+#   source_application_security_group_ids      = length(each.value.source_application_security_group_ids) > 0 ? each.value.source_application_security_group_ids : null
+#   destination_application_security_group_ids = length(each.value.destination_application_security_group_ids) > 0 ? each.value.destination_application_security_group_ids : null
+#   description                                = each.value.description
 
-  network_security_group_name = azurerm_network_security_group.nsg.name
-  resource_group_name         = var.resource_group_name
-}
+#   network_security_group_name = azurerm_network_security_group.nsg.name
+#   resource_group_name         = var.resource_group_name
+# }

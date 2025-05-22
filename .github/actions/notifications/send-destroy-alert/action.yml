@@ -1,0 +1,53 @@
+name: 'Send Destroy Alert'
+description: 'Sends alert when destroy operations are detected'
+
+inputs:
+  plan_summary:
+    description: 'Terraform plan summary'
+    required: true
+  environment:
+    description: 'Target environment'
+    required: true
+  webhook_url:
+    description: 'Power automate webhook URL'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Send Destroy Alert
+      shell: bash
+      run: |
+        # Extract branch name
+        if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+          BRANCH_NAME="$GITHUB_HEAD_REF"
+        else
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+        fi
+
+        jq -n \
+          --arg pipeline_status "terraform_destroy_detected" \
+          --arg repository "${{ github.repository }}" \
+          --arg run_number "${{ github.run_number }}" \
+          --arg branch "$BRANCH_NAME" \
+          --arg build_url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          --arg actor "${{ github.actor }}" \
+          --arg timestamp "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+          --arg plan_summary "${{ inputs.plan_summary }}" \
+          --arg environment "${{ inputs.environment }}" \
+          '{
+            pipeline_status: $pipeline_status,
+            repository: $repository,
+            run_number: $run_number,
+            branch: $branch,
+            build_url: $build_url,
+            actor: $actor,
+            timestamp: $timestamp,
+            plan_summary: $plan_summary,
+            environment: $environment
+          }' > payload.json
+
+        # Send the webhook
+        curl -X POST "${{ inputs.webhook_url }}" \
+          -H "Content-Type: application/json" \
+          -d @payload.json

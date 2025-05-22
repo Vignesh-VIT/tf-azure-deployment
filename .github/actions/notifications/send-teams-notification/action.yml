@@ -1,0 +1,174 @@
+name: 'Send Teams Notification'
+description: 'Sends notification to Microsoft Teams'
+
+inputs:
+  environment:
+    description: 'Target environment'
+    required: true
+  status:
+    description: 'Job status'
+    required: true
+  deployment:
+    description: 'Is this a deployment notification'
+    required: false
+    default: 'false'
+  webhook_url:
+    description: 'Teams webhook URL'
+    required: true
+
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Send Teams notifications
+      shell: bash
+      run: |
+        # Extract branch name from ref
+        if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+          BRANCH_NAME="$GITHUB_HEAD_REF"
+        else
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+        fi
+        
+        echo "Branch name: $BRANCH_NAME"
+
+        # Determine notification type and color
+        if [[ "${{ inputs.deployment }}" == "true" ]]; then
+          NOTIFICATION_TYPE="Deployment"
+        else
+          NOTIFICATION_TYPE="Plan"
+        fi
+
+        # Set color based on status
+        case "${{ inputs.status }}" in
+          "success")
+            COLOR="good"
+            ;;
+          "failure")
+            COLOR="attention"
+            ;;
+          *)
+            COLOR="warning"
+            ;;
+        esac
+
+        # Get current timestamp
+        TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+        # Create Adaptive Card payload
+        cat > teams_payload.json << EOF
+        {
+          "type": "message",
+          "attachments": [
+            {
+              "contentType": "application/vnd.microsoft.card.adaptive",
+              "content": {
+                "\$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                "type": "AdaptiveCard",
+                "version": "1.4",
+                "body": [
+                  {
+                    "type": "ColumnSet",
+                    "columns": [
+                      {
+                        "type": "Column",
+                        "width": "auto",
+                        "items": [
+                          {
+                            "type": "Image",
+                            "style": "person",
+                            "url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+                            "size": "Small",
+                            "altText": "GitHub Icon"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Column",
+                        "width": "stretch",
+                        "items": [
+                          {
+                            "type": "TextBlock",
+                            "text": "**GitHub Actions**",
+                            "wrap": true,
+                            "weight": "bolder"
+                          },
+                          {
+                            "type": "TextBlock",
+                            "spacing": "none",
+                            "text": "${TIMESTAMP}",
+                            "isSubtle": true,
+                            "wrap": true,
+                            "size": "small"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "TextBlock",
+                    "text": "Terraform ${NOTIFICATION_TYPE} - **${{ inputs.status }}**",
+                    "weight": "bolder",
+                    "size": "medium",
+                    "color": "${COLOR}"
+                  },
+                  {
+                    "type": "FactSet",
+                    "facts": [
+                      {
+                        "title": "Repository:",
+                        "value": "${{ github.repository }}"
+                      },
+                      {
+                        "title": "Environment:",
+                        "value": "${{ inputs.environment }}"
+                      },
+                      {
+                        "title": "Branch:",
+                        "value": "${BRANCH_NAME}"
+                      },
+                      {
+                        "title": "Status:",
+                        "value": "${{ inputs.status }}"
+                      },
+                      {
+                        "title": "Triggered By:",
+                        "value": "${{ github.actor }}"
+                      }
+                    ]
+                  }
+                ],
+                "actions": [
+                  {
+                    "type": "Action.OpenUrl",
+                    "title": "View Build Run",
+                    "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+        EOF
+
+        # Debug: Show the payload
+        echo "Sending payload:"
+        cat teams_payload.json
+
+        # Send the webhook
+        response=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.webhook_url }}" \
+          -H "Content-Type: application/json" \
+          -d @teams_payload.json)
+        
+        http_code=$(echo "$response" | tail -n1)
+        response_body=$(echo "$response" | head -n -1)
+        
+        echo "HTTP Status: $http_code"
+        echo "Response: $response_body"
+        
+        if [[ $http_code -ne 202 ]]; then
+          echo "Failed to send Teams notification"
+          exit 1
+        else
+          echo "Teams notification sent successfully"
+        fi
