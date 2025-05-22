@@ -1,15 +1,13 @@
 resource "azurerm_linux_virtual_machine" "vm" {
-  name                  = var.name
-  location              = var.location
-  resource_group_name   = var.resource_group_name
-  network_interface_ids = [var.nic_id]
-  size                  = var.vm_size
-  admin_username        = var.admin_username
+  name                            = var.name
+  location                        = var.location
+  resource_group_name             = var.resource_group_name
+  network_interface_ids           = [var.nic_id]
+  size                            = var.vm_size
+  admin_username                  = var.admin_username
+  admin_password                  = var.admin_password
+  disable_password_authentication = false
 
-  admin_ssh_key {
-    username   = var.admin_username
-    public_key = var.public_key_path
-  }
 
   os_disk {
     caching              = "ReadWrite"
@@ -31,5 +29,5 @@ resource "azurerm_linux_virtual_machine" "vm" {
     storage_account_uri = null
   }
 
-  tags = var.tags
 }
+

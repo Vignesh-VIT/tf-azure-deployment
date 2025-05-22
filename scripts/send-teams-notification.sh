@@ -1,8 +1,6 @@
 #!/bin/bash
 
-# This script sends a notification to Microsoft Teams via webhook
-# Usage: ./send-teams-notification.sh <webhook_url> <job_status> <repository_name> <branch_name> <run_id> <run_number> <actor> <terraform_plan_url>
-
+# Input Parameters
 webhook_url="$1"
 job_status="$2"
 repository_name="$3"
@@ -11,76 +9,143 @@ run_id="$5"
 run_number="$6"
 actor="$7"
 terraform_plan_url="${8:-}"
+destroy_message="${9:-}"
 
-# Set color based on job status
-if [ "$job_status" == "success" ]; then
-  theme_color="00FF00"  # Green
+# Determine the color based on the job status
+job_build_status=$(echo "$job_status" | tr '[:upper:]' '[:lower:]')
+
+if [ "$job_build_status" == "success" ]; then
+  color="good"
+elif [ -n "$destroy_message" ]; then
+  color="warning"
 else
-  theme_color="FF0000"  # Red
+  color="attention"
 fi
 
-# Start building JSON message
+# Get the current timestamp (build triggered time)
+timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Prepare destroy message section if present
+destroy_section=""
+if [ -n "$destroy_message" ]; then
+  destroy_section=',
+          {
+            "type": "Container",
+            "style": "warning",
+            "items": [
+              {
+                "type": "TextBlock",
+                "text": "🚨 **DESTRUCTIVE OPERATIONS ALERT**",
+                "weight": "bolder",
+                "color": "warning",
+                "wrap": true
+              },
+              {
+                "type": "TextBlock",
+                "text": "'"$destroy_message"'",
+                "wrap": true,
+                "color": "warning"
+              }
+            ]
+          }'
+fi
+
+# Construct the JSON message for Adaptive Card
 message_card='{
-  "@type": "MessageCard",
-  "title": "GitHub Action Notification for '"$repository_name"'",
-  "@context": "http://schema.org/extensions",
-  "themeColor": "'"$theme_color"'",
-  "summary": "Workflow '"$run_number"' finished with status '"$job_status"'",
-  "sections": [
+  "type": "message",
+  "attachments": [
     {
-      "activityTitle": "*'"$repository_name"' - Workflow Run #'"$run_number"'*",
-      "activitySubtitle": "Pipeline is ***'"$job_status"'***",
-      "facts": [
-        {
-          "name": "Repository",
-          "value": "'"$repository_name"'"
-        },
-        {
-          "name": "Branch",
-          "value": "'"$branch_name"'"
-        },
-        {
-          "name": "Status",
-          "value": "'"$job_status"'"
-        },
-        {
-          "name": "Triggered By",
-          "value": "'"$actor"'"
-        }
-      ]
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.0",
+        "body": [
+          {
+            "type": "ColumnSet",
+            "columns": [
+              {
+                "type": "Column",
+                "width": "auto",
+                "items": [
+                  {
+                    "type": "Image",
+                    "style": "person",
+                    "url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+                    "size": "Small",
+                    "altText": "GitHub Icon"
+                  }
+                ]
+              },
+              {
+                "type": "Column",
+                "width": "stretch",
+                "items": [
+                  {
+                    "type": "TextBlock",
+                    "text": "**'"GitHub"'**",
+                    "wrap": true
+                  },
+                  {
+                    "type": "TextBlock",
+                    "spacing": "none",
+                    "text": "**'"$timestamp"'**",
+                    "isSubtle": true,
+                    "wrap": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "TextBlock",
+            "text": "GitHub Action Notification - **'"$job_status"'**",
+            "weight": "bolder",
+            "size": "medium",
+            "color": "'"$color"'"
+          }'"$destroy_section"',
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Repository:",
+                "value": "'"$repository_name"'"
+              },
+              {
+                "title": "Branch:",
+                "value": "'"$branch_name"'"
+              },
+              {
+                "title": "Status:",
+                "value": "'"$job_status"'"
+              },
+              {
+                "title": "Triggered By:",
+                "value": "'"$actor"'"
+              }
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "type": "Action.OpenUrl",
+            "title": "View Build Run",
+            "url": "https://github.com/'"$repository_name"'/actions/runs/'"$run_id"'",
+            "role": "button"
+          },
+          {
+            "type": "Action.OpenUrl",
+            "title": "View Terraform Plan",
+            "url": "'"$terraform_plan_url"'",
+            "role": "button"            
+          }
+        ]
+      }
     }
-  ],
-  "potentialAction": [
-    {
-      "@type": "OpenUri",
-      "name": "View Workflow Run",
-      "targets": [
-        {
-          "os": "default",
-          "uri": "https://github.com/'"$repository_name"'/actions/runs/'"$run_id"'"
-        }
-      ]
-    }'
-
-# If terraform_plan_url is provided, append the additional action
-if [ -n "$terraform_plan_url" ]; then
-  message_card+=',
-    {
-      "@type": "OpenUri",
-      "name": "View Terraform Plan",
-      "targets": [
-        {
-          "os": "default",
-          "uri": "'"$terraform_plan_url"'"
-        }
-      ]
-    }'
-fi
-
-# Close the JSON
-message_card+='
   ]
 }'
 
-# Send the notification
-curl -H "Content-Type: application/json" -d "$message_card" "$webhook_url"
+# Send the POST request with the message card
+curl -X POST "$webhook_url" \
+  -H "Content-Type: application/json" \
+  -d "$message_card"
