@@ -104,8 +104,8 @@ jobs:
 
       - name: Set subscription ID
         run: |
-          cd terraform
-          SUBSCRIPTION_ID=$(grep subscription_id environments/${{ needs.determine-environment.outputs.environment }}/terraform.tfvars | cut -d'"' -f2 || echo "${{ secrets.AZURE_SUBSCRIPTION_ID }}")
+          cd terraform/project-backend
+          SUBSCRIPTION_ID=$(grep subscription_id ../environments/${{ needs.determine-environment.outputs.environment }}/terraform.tfvars | cut -d'"' -f2 || echo "${{ secrets.AZURE_SUBSCRIPTION_ID }}")
           echo "ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> $GITHUB_ENV
 
       - name: Install tflint
@@ -115,22 +115,22 @@ jobs:
       - name: Terraform linting
         id: lint
         run: |
-          cd terraform
+          cd terraform/project-backend
           tflint --recursive --only=terraform_unused_declarations
 
       - name: Terraform fmt check
         id: fmt
         run: |
-          cd terraform
+          cd terraform/project-backend
           terraform fmt -check -recursive
         continue-on-error: false
 
       - name: Terraform Init
         id: init
         run: |
-          cd terraform
+          cd terraform/project-backend
           terraform init \
-            -backend-config=environments/${{ needs.determine-environment.outputs.environment }}/backend.tfvars \
+            -backend-config=../environments/${{ needs.determine-environment.outputs.environment }}/backend.tfvars \
             -reconfigure
 
       - name: Terraform Validate
@@ -160,34 +160,52 @@ jobs:
 
       - name: Set subscription ID
         run: |
-          cd terraform
-          SUBSCRIPTION_ID=$(grep subscription_id environments/${{ needs.determine-environment.outputs.environment }}/terraform.tfvars | cut -d'"' -f2 || echo "${{ secrets.AZURE_SUBSCRIPTION_ID }}")
+          cd terraform/project-backend
+          SUBSCRIPTION_ID=$(grep subscription_id ../environments/${{ needs.determine-environment.outputs.environment }}/terraform.tfvars | cut -d'"' -f2 || echo "${{ secrets.AZURE_SUBSCRIPTION_ID }}")
           echo "ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> $GITHUB_ENV
 
       - name: Terraform Init
         id: init
         run: |
-          cd terraform
+          cd terraform/project-backend
           terraform init \
-            -backend-config=environments/${{ needs.determine-environment.outputs.environment }}/backend.tfvars \
+            -backend-config=../environments/${{ needs.determine-environment.outputs.environment }}/backend.tfvars \
             -reconfigure
 
       - name: Terraform Plan
         id: plan
         run: |
-          cd terraform
+          cd terraform/project-backend
           terraform plan \
-            -var-file=environments/${{ needs.determine-environment.outputs.environment }}/terraform.tfvars \
+            -var-file=../environments/${{ needs.determine-environment.outputs.environment }}/terraform.tfvars \
             -var="public_key_path=${{ secrets.SSH_PUBLIC_KEY }}" \
             -out=tfplan
         continue-on-error: false
+
+      - name: Check for Destroy Operations
+        id: check_destroy
+        run: |
+          cd terraform/project-backend
+          # Generate plan output in readable format
+          terraform show -no-color tfplan > plan_output.txt
+        
+          # Check if plan contains destroy operations
+          if grep -q "will be destroyed" plan_output.txt || grep -q "must be replaced" plan_output.txt; then
+            echo "destroy_detected=true" >> $GITHUB_OUTPUT
+            echo "DESTROY OPERATIONS DETECTED!"
+            echo "Resources to be destroyed:"
+            grep -A 2 -B 2 "will be destroyed\|must be replaced" plan_output.txt || true
+          else
+            echo "destroy_detected=false" >> $GITHUB_OUTPUT
+            echo "No destroy operations detected."
+          fi
 
       - name: Upload Terraform Plan
         id: upload
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan-${{ needs.determine-environment.outputs.environment }}
-          path: terraform/tfplan
+          path: terraform/project-backend/tfplan
           retention-days: 5
 
       - name: Check Terraform Plan Status
@@ -196,13 +214,21 @@ jobs:
           echo "Terraform plan failed. Please check the logs for more details."
           exit 1
 
+      - name: Fail Pipeline if Destroy Detected
+        if: steps.check_destroy.outputs.destroy_detected == 'true'
+        run: |
+          echo "PIPELINE FAILURE: Terraform plan contains DESTROY operations!"
+          echo "This is potentially dangerous and requires manual review."
+          echo "Please review the plan carefully before proceeding."
+          exit 1
+
       - name: Create Plan URL
         id: create_plan_url
         run: |
           PLAN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}?check_suite_focus=true"
           echo "plan_url=$PLAN_URL" >> $GITHUB_OUTPUT
 
-      - name: Send Teams notification
+      - name: Send Teams notifications
         run: |
           chmod +x ./scripts/send-teams-notification.sh
           # Extract branch name from ref
@@ -214,6 +240,12 @@ jobs:
           
           echo "Branch name: $BRANCH_NAME"
 
+          # Determine if destroy operations were detected
+          DESTROY_MESSAGE=""
+          if [[ "${{ steps.check_destroy.outputs.destroy_detected }}" == "true" ]]; then
+            DESTROY_MESSAGE="⚠️ WARNING: DESTROY OPERATIONS DETECTED! Pipeline failed for safety. Manual review required."
+          fi
+
           ./scripts/send-teams-notification.sh \
             "${{ secrets.MS_TEAMS_WEBHOOK_URL }}" \
             "${{ job.status }}" \
@@ -222,7 +254,8 @@ jobs:
             "${{ github.run_id }}" \
             "${{ github.run_number }}" \
             "${{ github.actor }}" \
-            "${{ steps.create_plan_url.outputs.plan_url }}"
+            "${{ steps.create_plan_url.outputs.plan_url }}" \
+            "$DESTROY_MESSAGE"
 
   terraform-apply:
     needs: [determine-environment, terraform-plan]
@@ -250,26 +283,26 @@ jobs:
 
       - name: Set subscription ID
         run: |
-          cd terraform
-          SUBSCRIPTION_ID=$(grep subscription_id environments/${{ needs.determine-environment.outputs.environment }}/terraform.tfvars | cut -d'"' -f2 || echo "${{ secrets.AZURE_SUBSCRIPTION_ID }}")
+          cd terraform/project-backend
+          SUBSCRIPTION_ID=$(grep subscription_id ../environments/${{ needs.determine-environment.outputs.environment }}/terraform.tfvars | cut -d'"' -f2 || echo "${{ secrets.AZURE_SUBSCRIPTION_ID }}")
           echo "ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> $GITHUB_ENV
 
       - name: Terraform Init
         id: init
         run: |
-          cd terraform
+          cd terraform/project-backend
           terraform init \
-            -backend-config=environments/${{ needs.determine-environment.outputs.environment }}/backend.tfvars \
+            -backend-config=../environments/${{ needs.determine-environment.outputs.environment }}/backend.tfvars \
             -reconfigure
 
       - name: Download Terraform Plan
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan-${{ needs.determine-environment.outputs.environment }}
-          path: terraform
+          path: terraform/project-backend
       
       - name: Terraform Apply
         id: apply
         run: |
-          cd terraform
+          cd terraform/project-backend
           terraform apply -auto-approve tfplan

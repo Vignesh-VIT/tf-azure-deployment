@@ -13,6 +13,11 @@ variable "resource_group_name" {
   type        = string
 }
 
+variable "environment" {
+  description = "The environment name (e.g., dev, staging, prod)"
+  type        = string
+}
+
 variable "nic_id" {
   description = "NIC ID to attach to the VM"
   type        = string
@@ -32,6 +37,12 @@ variable "admin_username" {
 variable "public_key_path" {
   description = "Path to the SSH public key file"
   type        = string
+}
+
+variable "install_flask" {
+  description = "Whether to install Flask application"
+  type        = bool
+  default     = false
 }
 
 variable "tags" {

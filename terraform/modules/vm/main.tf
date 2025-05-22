@@ -31,5 +31,6 @@ resource "azurerm_linux_virtual_machine" "vm" {
     storage_account_uri = null
   }
 
-  tags = var.tags
+
 }
+
